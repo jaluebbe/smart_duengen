@@ -1,1 +1,8 @@
 Please put your questions here. Inlude your name please.
+Shahid - We need to know what all feature does this library provide
+1. Converting the Shape file to Geoson.
+What other features does the library provide? 
+
+This code is not being run on mobile. The javascript code needs to be accessed via a webbrowser internally. 
+We may face issue while submission of the application as application with javascript libraries are rejected sometimes.
+Hence need to understand what are the other outputs/features that the library extracts.
