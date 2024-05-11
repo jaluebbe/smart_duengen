@@ -1,11 +1,13 @@
 map.createPane('boundaries');
 map.createPane('plan');
 map.createPane('protocol');
+map.createPane('track');
 map.createPane('active');
 map.createPane('vehicle');
 map.getPane('boundaries').style.zIndex = 390;
 map.getPane('plan').style.zIndex = 391;
 map.getPane('protocol').style.zIndex = 392;
+map.getPane('track').style.zIndex = 393;
 map.getPane('active').style.zIndex = 394;
 map.getPane('vehicle').style.zIndex = 395;
 
@@ -83,13 +85,15 @@ var protocolLayer = L.geoJSON([], {
         });
     }
 }).addTo(map);
+var trackLayer = L.geoJSON([], {
+    pane: 'track'
+}).addTo(map);
 var settings = {};
 var noSleep = new NoSleep();
 var boundariesMultiPolygon = undefined;
 var boundariesArea = 0;
 
-function importProjectFileContent(fileContent) {
-    let projectInput = JSON.parse(fileContent);
+function importProjectFileContent(projectInput) {
     boundariesLayer.addData(projectInput.boundaries);
     boundariesMultiPolygon = turf.combine(boundariesLayer.toGeoJSON()).features[0];
     boundariesArea = turf.area(boundariesMultiPolygon);
@@ -138,6 +142,34 @@ function importShapes(files) {
     xhr.send(formData);
 }
 
+function processContent(content) {
+    console.log(content);
+    if (content.boundaries != null) {
+        importProjectFileContent(content);
+    } else if (content.geojson != null) {
+        disconnectGPS();
+        planLayer.addData(content.geojson);
+        if (planLayer.getBounds().isValid())
+            map.fitBounds(planLayer.getBounds());
+        if (content.result != null) {
+            resultGeoJSON = {
+                "type": "FeatureCollection",
+                "features": [{
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": content.result.map(row => {
+                            return [row.longitude, row.latitude]
+                        })
+                    },
+                    "properties": {}
+                }]
+            }
+            trackLayer.addData(resultGeoJSON);
+        }
+    }
+}
+
 function importProjectOrShapes() {
     let fileInput = dataTransferInputForm.fileInput;
     if (fileInput.files.length == 0) {
@@ -147,13 +179,15 @@ function importProjectOrShapes() {
     boundariesLayer.clearLayers();
     planLayer.clearLayers();
     protocolLayer.clearLayers();
+    trackLayer.clearLayers();
     for (const key in settings) {
         delete settings[key];
     }
     if (fileInput.files[0].type == "application/json") {
         let fr = new FileReader();
         fr.onload = function(fileData) {
-            importProjectFileContent(fileData.target.result);
+            let unknownContent = JSON.parse(fileData.target.result);
+            processContent(unknownContent);
         };
         fr.readAsText(fileInput.files[0])
     } else if (fileInput.files[0].type == "application/zip") {
