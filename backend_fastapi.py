@@ -3,15 +3,86 @@ import tempfile
 import os
 import re
 import zipfile
+import json
+from typing import Literal
+from pydantic import BaseModel, Field
 from fastapi import FastAPI, UploadFile, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 import uvicorn
 import geopandas
-import json
+from shapely.ops import unary_union
 
 
 epsg_pattern = re.compile("^(?:EPSG|epsg):[0-9]{4,5}$")
+
+
+class Point(BaseModel):
+    type: Literal["Point"]
+    coordinates: list[float]
+
+
+class MultiPoint(BaseModel):
+    type: Literal["MultiPoint"]
+    coordinates: list[list[float]]
+
+
+class LineString(BaseModel):
+    type: Literal["LineString"]
+    coordinates: list[list[float]]
+
+
+class MultiLineString(BaseModel):
+    type: Literal["MultiLineString"]
+    coordinates: list[list[list[float]]]
+
+
+class Polygon(BaseModel):
+    type: Literal["Polygon"]
+    coordinates: list[list[list[float]]]
+
+
+class MultiPolygon(BaseModel):
+    type: Literal["MultiPolygon"]
+    coordinates: list[list[list[list[float]]]]
+
+
+class Geometry(BaseModel):
+    type: Literal[
+        "Point",
+        "MultiPoint",
+        "LineString",
+        "MultiLineString",
+        "Polygon",
+        "MultiPolygon",
+    ]
+    coordinates: list[float] | list[list[float]] | list[
+        list[list[float]]
+    ] | list[list[list[list[float]]]]
+
+
+class Feature(BaseModel):
+    type: Literal["Feature"]
+    geometry: Geometry
+    properties: dict = Field(default_factory=dict)
+
+
+class FeatureCollection(BaseModel):
+    type: Literal["FeatureCollection"]
+    features: list[Feature]
+
+
+class Settings(BaseModel):
+    throwing_range: float = Field(default=15)
+    min_speed: float = Field(default=1)
+    default_rate: float = Field(default=0)
+
+
+class ProjectFile(BaseModel):
+    boundaries: FeatureCollection | None = None
+    plan: FeatureCollection | None = None
+    settings: Settings = Field(default_factory=Settings)
+
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -84,7 +155,7 @@ async def convert_plan_shape_files(files: list[UploadFile]):
         rate_key = known_rate_keys.pop()
     else:
         raise HTTPException(
-            status_code=404, detail=f"No unique rate key found."
+            status_code=404, detail="No unique rate key found."
         )
     rate_values = [
         _property[rate_key]
@@ -97,6 +168,31 @@ async def convert_plan_shape_files(files: list[UploadFile]):
     for _property in all_properties:
         _property["V22RATE"] = _property[rate_key] / max_rate
     return result
+
+
+@app.post("/api/create_project_file/")
+async def create_project_file(project_file: ProjectFile):
+    if project_file.boundaries is None:
+        if project_file.plan is None:
+            raise HTTPException(
+                status_code=404, detail="No boundaries or plan provided."
+            )
+        gdf = geopandas.GeoDataFrame.from_features(
+            [feature.model_dump() for feature in project_file.plan.features]
+        )
+        merged_polygons = unary_union(gdf.geometry)
+        merged_gdf = geopandas.GeoDataFrame(
+            geometry=[merged_polygons], crs=gdf.crs
+        )
+        boundaries_dict = json.loads(merged_gdf.to_json())
+        features = [
+            Feature(type="Feature", geometry=feature["geometry"])
+            for feature in boundaries_dict["features"]
+        ]
+        project_file.boundaries = FeatureCollection(
+            type="FeatureCollection", features=features
+        )
+    return project_file
 
 
 if __name__ == "__main__":
