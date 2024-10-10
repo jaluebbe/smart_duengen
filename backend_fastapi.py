@@ -76,6 +76,7 @@ class Settings(BaseModel):
     throwing_range: float = Field(default=15)
     min_speed: float = Field(default=1)
     default_rate: float = Field(default=0)
+    default_speed: float = Field(default=2.2)
 
 
 class ProjectFile(BaseModel):
@@ -142,11 +143,9 @@ def shape_file_conversion(
         }
 
 
-@app.post("/api/convert_plan_shape_files/")
-async def convert_plan_shape_files(files: list[UploadFile]):
-    result = shape_file_conversion(files)
+def process_plan_geojson(plan):
     all_properties = [
-        _feature["properties"] for _feature in result["geojson"]["features"]
+        _feature["properties"] for _feature in plan["geojson"]["features"]
     ]
     known_rate_keys = set(all_properties[0].keys()).intersection(
         ["RATE", "Menge", "rate"]
@@ -154,24 +153,27 @@ async def convert_plan_shape_files(files: list[UploadFile]):
     if len(known_rate_keys) == 1:
         rate_key = known_rate_keys.pop()
     else:
-        raise HTTPException(
-            status_code=404, detail="No unique rate key found."
-        )
+        raise HTTPException(status_code=404, detail="No unique rate key found.")
     rate_values = [
         _property[rate_key]
         for _property in all_properties
         if _property[rate_key] > 0
     ]
-    result["min_rate"] = min(rate_values)
+    plan["min_rate"] = min(rate_values)
     max_rate = max(rate_values)
-    result["max_rate"] = max_rate
+    plan["max_rate"] = max_rate
     for _property in all_properties:
         _property["V22RATE"] = _property[rate_key] / max_rate
-    return result
+    return plan
 
 
-@app.post("/api/create_project_file/")
-async def create_project_file(project_file: ProjectFile):
+@app.post("/api/convert_plan_shape_files/")
+async def convert_plan_shape_files(files: list[UploadFile]):
+    plan_geojson = shape_file_conversion(files)
+    return process_plan_geojson(plan_geojson)
+
+
+def complete_project_file(project_file: ProjectFile):
     if project_file.boundaries is None:
         if project_file.plan is None:
             raise HTTPException(
@@ -193,6 +195,20 @@ async def create_project_file(project_file: ProjectFile):
             type="FeatureCollection", features=features
         )
     return project_file
+
+
+@app.post("/api/create_project_file/")
+async def create_project_file(project_file: ProjectFile):
+    return complete_project_file(project_file)
+
+
+@app.post("/api/convert_plan_shape_to_project/")
+async def convert_plan_shape_to_project(files: list[UploadFile]):
+    plan_geojson = shape_file_conversion(files)
+    processed_plan = process_plan_geojson(plan_geojson)
+    plan_feature_collection = FeatureCollection(**processed_plan["geojson"])
+    project_file = ProjectFile(plan=plan_feature_collection)
+    return complete_project_file(project_file)
 
 
 if __name__ == "__main__":
