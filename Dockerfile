@@ -1,10 +1,10 @@
-FROM python:3.10.6-slim
+FROM python:3.10-slim
 
 WORKDIR /code
 
 COPY ./requirements.txt /code/requirements.txt
 RUN apt-get update && \
-    apt-get install -y gdal-bin libgdal-dev g++ libgdal28 git && \
+    apt-get install -y gdal-bin libgdal-dev g++ libgdal32 git && \
     pip install --upgrade pip && \
     pip install --no-cache-dir --upgrade -r /code/requirements.txt && \
     apt-get -y remove g++ gdal-bin libgdal-dev git && \
