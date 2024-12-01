@@ -148,7 +148,7 @@ def process_plan_geojson(plan):
         _feature["properties"] for _feature in plan["geojson"]["features"]
     ]
     known_rate_keys = set(all_properties[0].keys()).intersection(
-        ["RATE", "Menge", "rate"]
+        ["RATE", "Menge", "rate", "fertilizer"]
     )
     if len(known_rate_keys) == 1:
         rate_key = known_rate_keys.pop()
