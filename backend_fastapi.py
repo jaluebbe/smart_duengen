@@ -85,6 +85,17 @@ class ProjectFile(BaseModel):
     settings: Settings = Field(default_factory=Settings)
 
 
+def split_multipolygon(feature):
+    return [
+        {
+            "type": "Feature",
+            "geometry": {"type": "Polygon", "coordinates": polygon},
+            "properties": feature["properties"],
+        }
+        for polygon in feature["geometry"]["coordinates"]
+    ]
+
+
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -135,9 +146,19 @@ def shape_file_conversion(
         else:
             original_crs = None
             myshpfile = myshpfile.set_crs(input_crs)
+        geojson = json.loads(myshpfile.to_crs("EPSG:4326").to_json())
+        geojson["features"] = [
+            new_feature
+            for feature in geojson["features"]
+            for new_feature in (
+                split_multipolygon(feature)
+                if feature["geometry"]["type"] == "MultiPolygon"
+                else [feature]
+            )
+        ]
         return {
             "file_name": os.path.splitext(file_name)[0],
-            "geojson": json.loads(myshpfile.to_crs("EPSG:4326").to_json()),
+            "geojson": geojson,
             "input_crs": input_crs,
             "original_crs": original_crs,
         }
