@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM python:3.10-slim-bullseye
 
 WORKDIR /code
 
@@ -8,7 +8,8 @@ RUN apt-get update && \
     pip install --upgrade pip && \
     pip install --no-cache-dir --upgrade -r /code/requirements.txt && \
     apt-get -y remove g++ gdal-bin libgdal-dev git && \
-    apt -y autoremove
+    apt -y autoremove && \
+    apt-get update && apt-get upgrade -y && apt-get clean
 
 COPY ./static /code/static
 COPY ./backend_fastapi.py /code/
